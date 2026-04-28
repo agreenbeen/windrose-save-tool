@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Windrose Save Tool</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<nav id="sidebar">
+  <div class="sidebar-brand">Windrose <span>Save</span></div>
+  <a href="#config"    data-view="config">Config</a>
+  <a href="#report"    data-view="report">Report</a>
+  <a href="#inventory" data-view="inventory">Inventory</a>
+  <a href="#coins"     data-view="coins">Coins</a>
+  <a href="#backups"   data-view="backups">Backups</a>
+</nav>
+
+<main id="content"></main>
+
+<!-- Confirmation modal -->
+<dialog id="confirm-modal">
+  <h3 id="modal-title"></h3>
+  <div id="modal-body"></div>
+  <div class="modal-actions">
+    <button id="modal-cancel">Cancel</button>
+    <button id="modal-ok" class="btn-primary">Confirm</button>
+  </div>
+</dialog>
+
+<!-- Toast container -->
+<div id="toasts"></div>
+
+<!-- Item picker overlay -->
+<div id="item-picker-overlay" class="picker-overlay hidden">
+  <div class="picker-dialog">
+    <div class="picker-header">
+      <h3>Select Item</h3>
+      <button class="btn-icon" onclick="closeItemPicker()">✕</button>
+    </div>
+    <input id="picker-search" type="text" placeholder="Search items (rope, planks, timber…)"
+           oninput="searchItemCatalog(this.value)" autocomplete="off" />
+    <div id="picker-results" class="picker-results"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

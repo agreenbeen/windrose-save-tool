@@ -1,0 +1,29 @@
+# Build & packaging
+dist/
+build/
+*.egg-info/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+
+# Test & tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Auto-generated test fixtures (created at runtime by conftest.py)
+test_saves/
+
+# Dev scratch files
+test.json
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db

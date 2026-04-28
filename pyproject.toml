@@ -1,0 +1,39 @@
+[project]
+name = "r5-save-tool"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "rocksdict>=0.3.23",
+    "click>=8.1",
+    "fastapi>=0.116",
+    "uvicorn>=0.35",
+    "pywebview>=5.0",
+    "PySide6>=6.9",
+    "qtpy>=2.4",
+    "bottle>=0.13",
+    "proxy-tools>=0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+build = [
+    "pyinstaller>=6.19",
+]
+
+[project.scripts]
+r5-save = "r5_save_tool.cli:cli"
+r5-save-ui-api = "r5_save_tool.ui_api:main"
+
+[project.gui-scripts]
+r5-save-ui = "r5_save_tool.ui_window:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
