@@ -4,7 +4,7 @@
 # Build with:
 #   pyinstaller build_exe.spec
 #
-# Output: dist/r5-save-tool.exe  (single-file onefile build)
+# Output: dist/windrose-save-tool.exe  (single-file onefile build)
 #
 # Note: on first launch Windows extracts ~150-250 MB to %TEMP%\_MEIxxxxxx\.
 # Subsequent launches reuse the same extraction folder until it is cleaned up.
@@ -112,7 +112,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='r5-save-tool',
+    name='windrose-save-tool',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
