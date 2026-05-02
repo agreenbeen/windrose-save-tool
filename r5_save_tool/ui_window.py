@@ -82,8 +82,9 @@ def launch() -> None:
     """
     Start the API then open a desktop window.
 
-    Tries pywebview first (native window). If pywebview or its native backend
-    is unavailable the tool falls back to the system browser.
+    Tries pywebview first (native window using the platform default — on
+    Windows this is WebView2 / Edge Chromium, not Qt). If pywebview or its
+    native backend is unavailable the tool falls back to the system browser.
     """
     started_local_api = False
     api_server: uvicorn.Server | None = None
@@ -127,7 +128,8 @@ def launch() -> None:
             resizable=True,
             min_size=(900, 600),
         )
-        _wv.start(gui="qt", debug=False)
+        # Default GUI backend keeps the bundle small (no PySide6). WebView2 is a system component.
+        _wv.start(debug=False)
         # Native window closed.
         if started_local_api:
             _stop_server(api_server, t)

@@ -1,38 +1,21 @@
-# build_exe.spec
-# PyInstaller spec for Windrose Save Tool desktop app.
+# Onedir PyInstaller layout — same payload as onefile but without self-extraction to %TEMP%.
 #
-# Keep ``hidden_imports`` in sync with ``build_exe_onedir.spec`` (same Analysis inputs).
+# Keep ``hidden_imports`` in sync with ``build_exe.spec`` (same Analysis inputs).
 #
-# Build with:
-#   pyinstaller build_exe.spec
+# Build:
+#   pyinstaller build_exe_onedir.spec --noconfirm
 #
-# Output: dist/windrose-save-tool.exe  (single-file onefile build)
-#
-# Note: onefile extracts the full payload to %TEMP%\_MEIxxxxxx\ on cold start.
-# Footprint is smaller without Qt/PySide6—measure with scripts/measure_exe_size.py.
-# Subsequent launches reuse the same extraction folder until it is cleaned up.
-# Backups are written next to windrose-save-tool.exe, not inside the temp folder.
-#
-# Notes:
-# - rocksdict ships compiled extensions; PyInstaller auto-detects most DLLs.
-# - pywebview uses the system WebView2 Runtime (built-in on Windows 10 1803+
-#   and Windows 11). No bundling of the WebView2 runtime is needed.
-# - uvicorn / starlette have dynamic import patterns that require hidden imports.
+# Output: dist/windrose-save-tool/ (folder — distribute the whole tree)
 
 from pathlib import Path
 
 block_cipher = None
 
-# ---------------------------------------------------------------------------
-# Collect files
-# ---------------------------------------------------------------------------
 datas = [
-    # UI static frontend files
     (str(Path('r5_save_tool/ui_static').resolve()), 'r5_save_tool/ui_static'),
 ]
 
 hidden_imports = [
-    # r5_save_tool modules
     'r5_save_tool',
     'r5_save_tool.paths',
     'r5_save_tool.ui_api',
@@ -50,7 +33,6 @@ hidden_imports = [
     'r5_save_tool.report',
     'r5_save_tool.schema',
     'r5_save_tool.ue_parser',
-    # uvicorn dynamic imports
     'uvicorn',
     'uvicorn.logging',
     'uvicorn.loops',
@@ -64,7 +46,6 @@ hidden_imports = [
     'uvicorn.protocols.websockets.auto',
     'uvicorn.lifespan',
     'uvicorn.lifespan.on',
-    # fastapi / starlette
     'fastapi',
     'fastapi.staticfiles',
     'starlette',
@@ -72,21 +53,15 @@ hidden_imports = [
     'starlette.responses',
     'starlette.routing',
     'pydantic',
-    # pywebview
     'webview',
     'webview.platforms',
     'webview.platforms.edgechromium',
     'webview.platforms.winforms',
-    # anyio async backend
     'anyio',
     'anyio._backends._asyncio',
-    # h11 HTTP parser
     'h11',
 ]
 
-# ---------------------------------------------------------------------------
-# Analysis
-# ---------------------------------------------------------------------------
 a = Analysis(
     ['r5_save_tool/ui_window.py'],
     pathex=[str(Path('.').resolve())],
@@ -108,18 +83,24 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='windrose-save-tool',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,   # Hide the console window
-    icon=None,       # Add a .ico path here if you have an icon
-    onefile=True,
+    console=False,
+    icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    name='windrose-save-tool',
 )

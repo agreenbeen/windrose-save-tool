@@ -119,6 +119,8 @@ Examples:
 
 If you change output shape, verify both the CLI summary and the written JSON or HTML artifact.
 
+After changing Windows packaging or heavyweight dependencies, rebuild the EXE and capture size with `python scripts/measure_exe_size.py --out tmp/exe-size/latest-measure.json` (see [docs/windows-packaging.md](docs/windows-packaging.md)).
+
 ## Known Pitfalls
 
 ### RocksDB test fixture integrity

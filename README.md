@@ -9,7 +9,7 @@ A desktop app for safely editing your Windrose save game. Add items to your ship
 
 ## Getting Started
 
-1. **Launch the app** — double-click `r5-save-tool.exe`
+1. **Launch the app** — double-click `windrose-save-tool.exe`
 2. **Check the Config screen** — the app should find your save automatically. If anything shows a warning, see [First-Time Setup](docs/ui.md#first-time-setup) in the user guide.
 3. **Make your changes** — use the sidebar to navigate to Inventory, Coins, or Backups
 
@@ -57,8 +57,10 @@ Build the distributable EXE:
 ```powershell
 uv sync --extra build
 .venv\Scripts\pyinstaller.exe build_exe.spec --noconfirm
-# Output: dist\r5-save-tool.exe
+# Output: dist\windrose-save-tool.exe (onefile) or dist\windrose-save-tool\ (onedir build)
 ```
+
+See [Windows packaging & size measurement](docs/windows-packaging.md) for onedir builds and comparing artifact sizes.
 
 Additional developer docs:
 

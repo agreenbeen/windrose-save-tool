@@ -76,18 +76,20 @@ Preferred launch paths:
 # Repository/dev launch
 .venv\Scripts\r5-save-ui.exe
 
-# Distributable launch
-dist\r5-save-tool\r5-save-tool.exe
+# Distributable launch (onefile)
+dist\windrose-save-tool.exe
 ```
 
 Fresh dist build:
 
 ```powershell
-Get-Process | Where-Object { $_.Path -like "*dist\\r5-save-tool*" } | Stop-Process -Force
-Remove-Item -Recurse -Force .\dist\r5-save-tool -ErrorAction SilentlyContinue
+Get-Process | Where-Object { $_.Path -like "*dist\\windrose-save-tool*" } | Stop-Process -Force
+Remove-Item -Force .\dist\windrose-save-tool.exe -ErrorAction SilentlyContinue
 .venv\Scripts\python.exe -m pip install pyinstaller
 .venv\Scripts\python.exe -m PyInstaller build_exe.spec --noconfirm
 ```
+
+Onedir builds: see [windows-packaging.md](windows-packaging.md).
 
 You can point the tool at a specific save root with `--save-root`, or set `R5_SAVE_ROOT`.
 
@@ -176,6 +178,8 @@ See `docs/architecture.md` for the details.
 - `docs/SAFETY.md`: operational safety, backups, and restore procedures
 - `docs/MAPPINGS.md`: item and coin mapping confidence guidance
 - `docs/piastre-mapping-notes.md`: why player Piastre mapping is hard and the deterministic path forward
+- `docs/windows-packaging.md`: PyInstaller onefile vs onedir, size measurement harness, alternate packager spikes
+- `docs/ui.md`: desktop UI and packaged EXE troubleshooting
 
 Key developer modules for the inventory workflow:
 
