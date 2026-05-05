@@ -36,6 +36,7 @@ _DEFAULT_ROOT = (
     / "AppData" / "Local" / "R5" / "Saved" / "SaveProfiles"
 )
 _WINDROSE_PLAYERS_ROOT = Path.home() / "AppData" / "Local" / "Windrose" / "Saved" / "Players"
+_ROCKSDB_DIR_NAMES = ("RocksDB_v2", "RocksDB")
 
 
 class DirectoryComparison(TypedDict):
@@ -46,25 +47,25 @@ class DirectoryComparison(TypedDict):
 
 
 def _find_save_root(save_root: str | None) -> Path:
-    """Locate the 0.10.0 RocksDB root, resolving Steam ID subdirectory automatically."""
+    """Locate the versioned RocksDB root, preferring RocksDB_v2 over RocksDB."""
     base = Path(save_root) if save_root else _DEFAULT_ROOT
     if not base.exists():
         raise click.ClickException(f"Save root not found: {base}")
 
-    # If the user gave us a path ending in a Steam ID or profile, use as-is
-    versioned = base / "RocksDB" / "0.10.0"
-    if versioned.exists():
-        return versioned
+    for dir_name in _ROCKSDB_DIR_NAMES:
+        versioned = base / dir_name / "0.10.0"
+        if versioned.exists():
+            return versioned
 
-    # Walk one level to find a numeric Steam ID directory
     for child in base.iterdir():
         if child.is_dir() and child.name.isdigit():
-            candidate = child / "RocksDB" / "0.10.0"
-            if candidate.exists():
-                return candidate
+            for dir_name in _ROCKSDB_DIR_NAMES:
+                candidate = child / dir_name / "0.10.0"
+                if candidate.exists():
+                    return candidate
 
     raise click.ClickException(
-        f"Could not locate RocksDB/0.10.0 under {base}. "
+        f"Could not locate RocksDB_v2/0.10.0 or RocksDB/0.10.0 under {base}. "
         "Use --save-root to specify the exact path."
     )
 
