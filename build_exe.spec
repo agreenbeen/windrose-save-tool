@@ -18,10 +18,26 @@
 # - pywebview uses the system WebView2 Runtime (built-in on Windows 10 1803+
 #   and Windows 11). No bundling of the WebView2 runtime is needed.
 # - uvicorn / starlette have dynamic import patterns that require hidden imports.
+# - pythonnet / clr_loader data files: see ``scripts/pyinstaller_dotnet_datas.py``
+#   (Windows ships only Python.Runtime.dll + .deps.json + one ClrLoader.dll).
+# - ``excludes`` drops optional uvicorn speed-ups and pydantic's mypy plugin.
 
+import importlib.util
 from pathlib import Path
 
 block_cipher = None
+
+
+def _load_dotnet_bridge_runtime_datas() -> list[tuple[str, str]]:
+    # PyInstaller executes the spec without ``__file__``; ``SPECPATH`` is the spec directory.
+    helper = Path(SPECPATH) / "scripts" / "pyinstaller_dotnet_datas.py"
+    spec = importlib.util.spec_from_file_location("_pyi_dotnet_datas", helper)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load PyInstaller helper: {helper}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.dotnet_bridge_runtime_datas()
+
 
 # ---------------------------------------------------------------------------
 # Collect files
@@ -30,6 +46,7 @@ datas = [
     # UI static frontend files
     (str(Path('r5_save_tool/ui_static').resolve()), 'r5_save_tool/ui_static'),
 ]
+datas += _load_dotnet_bridge_runtime_datas()
 
 hidden_imports = [
     # r5_save_tool modules
@@ -96,7 +113,19 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'numpy', 'pandas', 'scipy'],
+    excludes=[
+        'tkinter',
+        'matplotlib',
+        'numpy',
+        'pandas',
+        'scipy',
+        # Optional speed-ups / dev tooling not used by the frozen UI server
+        'httptools',
+        'uvloop',
+        'watchfiles',
+        # Pydantic mypy plugin only
+        'pydantic.mypy',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

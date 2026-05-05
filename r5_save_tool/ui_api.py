@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
@@ -283,9 +284,24 @@ def restore_backup_route(
         _raise_api_error(exc)
 
 
+def _resolve_ui_listen_port() -> int:
+    """Match ``ui_window`` semantics: ``R5_SAVE_UI_PORT`` may be ``0`` or ``auto``."""
+    raw = os.environ.get("R5_SAVE_UI_PORT", "8765").strip().lower()
+    if raw in ("0", "auto"):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = int(s.getsockname()[1])
+        os.environ["R5_SAVE_UI_PORT"] = str(port)
+        return port
+    try:
+        return int(os.environ.get("R5_SAVE_UI_PORT", "8765"))
+    except ValueError:
+        return 8765
+
+
 def main() -> None:
     host = os.environ.get("R5_SAVE_UI_HOST", "127.0.0.1")
-    port = int(os.environ.get("R5_SAVE_UI_PORT", "8765"))
+    port = _resolve_ui_listen_port()
     uvicorn.run("r5_save_tool.ui_api:app", host=host, port=port, reload=False)
 
 

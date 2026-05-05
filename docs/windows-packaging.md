@@ -35,6 +35,7 @@ Copy `tmp/exe-size/latest-measure.json` to `baseline.json` when you intentionall
 - **Packager:** PyInstaller from [build_exe.spec](../build_exe.spec).
 - **Window shell:** pywebview uses the platform default on Windows (Edge Chromium / WebView2 via `webview.platforms.edgechromium`). **PySide6 / Qt are not bundled** — this is the largest size win vs the older Qt-forced path.
 - **Prerequisite:** WebView2 Runtime (present on supported Windows 10/11 per [docs/ui.md](ui.md)).
+- **Double-click vs terminal:** The onefile build uses `console=False` (GUI subsystem). End users never get a console window. The launcher assigns safe `stdout`/`stderr` when they are `None` (discarded to `nul` / in-memory), so Explorer launches do not crash on the first `print` before the API starts—without `AllocConsole()` or flipping the PE to a console app.
 
 See [Strategy decision](#strategy-decision) below for rationale and when to revisit.
 

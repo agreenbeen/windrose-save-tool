@@ -15,6 +15,19 @@ A desktop app for safely editing your Windrose save game. Add items to your ship
 
 The app opens a small dark-themed window. If no window appears, look for it in your taskbar.
 
+### Networking (one port for UI + API)
+
+The desktop app runs a single local web server. The **same** `http://127.0.0.1:PORT` is used for both the on-screen UI (`/ui/…`) and the backing API (`/api/…`) — not two different ports.
+
+If something else is already using the default port (**8765**), you can pick a fixed port or let the app choose one:
+
+| Environment variable | Meaning |
+|---------------------|---------|
+| `R5_SAVE_UI_PORT` | Port number (default `8765`), or `0` / `auto` to use a free port at launch |
+| `R5_SAVE_UI_HOST` | Host to open in the browser (default `127.0.0.1`) |
+
+Set these in Windows *Environment Variables* for your user, or only for one session in PowerShell, for example: `set R5_SAVE_UI_PORT=auto` before starting the EXE.
+
 ## What You Can Do
 
 | Screen | What it does |

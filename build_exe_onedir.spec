@@ -7,13 +7,26 @@
 #
 # Output: dist/windrose-save-tool/ (folder — distribute the whole tree)
 
+import importlib.util
 from pathlib import Path
 
 block_cipher = None
 
+
+def _load_dotnet_bridge_runtime_datas() -> list[tuple[str, str]]:
+    helper = Path(SPECPATH) / "scripts" / "pyinstaller_dotnet_datas.py"
+    spec = importlib.util.spec_from_file_location("_pyi_dotnet_datas", helper)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load PyInstaller helper: {helper}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.dotnet_bridge_runtime_datas()
+
+
 datas = [
     (str(Path('r5_save_tool/ui_static').resolve()), 'r5_save_tool/ui_static'),
 ]
+datas += _load_dotnet_bridge_runtime_datas()
 
 hidden_imports = [
     'r5_save_tool',
@@ -71,7 +84,17 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['tkinter', 'matplotlib', 'numpy', 'pandas', 'scipy'],
+    excludes=[
+        'tkinter',
+        'matplotlib',
+        'numpy',
+        'pandas',
+        'scipy',
+        'httptools',
+        'uvloop',
+        'watchfiles',
+        'pydantic.mypy',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
