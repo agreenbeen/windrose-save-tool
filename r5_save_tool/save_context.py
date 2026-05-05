@@ -9,6 +9,8 @@ from .db import _locate_single_subdir
 DEFAULT_SAVE_PROFILES_ROOT = Path.home() / "AppData" / "Local" / "R5" / "Saved" / "SaveProfiles"
 WINDROSE_PLAYERS_ROOT = Path.home() / "AppData" / "Local" / "Windrose" / "Saved" / "Players"
 
+_ROCKSDB_DIR_NAMES = ("RocksDB_v2", "RocksDB")
+
 
 class DirectoryComparison(TypedDict):
     a_only: list[str]
@@ -18,23 +20,26 @@ class DirectoryComparison(TypedDict):
 
 
 def find_save_root(save_root: str | Path | None) -> Path:
-    """Locate the active RocksDB/0.10.0 root, resolving Steam ID directories when needed."""
+    """Locate the active versioned RocksDB root, preferring RocksDB_v2 over RocksDB."""
     base = Path(save_root) if save_root else DEFAULT_SAVE_PROFILES_ROOT
     if not base.exists():
         raise FileNotFoundError(f"Save root not found: {base}")
 
-    versioned = base / "RocksDB" / "0.10.0"
-    if versioned.exists():
-        return versioned
+    for dir_name in _ROCKSDB_DIR_NAMES:
+        versioned = base / dir_name / "0.10.0"
+        if versioned.exists():
+            return versioned
 
     for child in base.iterdir():
         if child.is_dir() and child.name.isdigit():
-            candidate = child / "RocksDB" / "0.10.0"
-            if candidate.exists():
-                return candidate
+            for dir_name in _ROCKSDB_DIR_NAMES:
+                candidate = child / dir_name / "0.10.0"
+                if candidate.exists():
+                    return candidate
 
     raise FileNotFoundError(
-        f"Could not locate RocksDB/0.10.0 under {base}. Use an explicit save-root path."
+        f"Could not locate RocksDB_v2/0.10.0 or RocksDB/0.10.0 under {base}. "
+        "Use an explicit save-root path."
     )
 
 

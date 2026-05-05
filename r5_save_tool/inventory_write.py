@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .backup import backup_db
+from .checkpoint_zip import update_checkpoint_zip
 from .coin import extract_type3_objects
 from .db import _locate_single_subdir, open_players_db
 from .inventory_targets import resolve_inventory_asset_target
@@ -90,6 +91,11 @@ def _extract_ship_chest_slots(blob: bytes) -> list[dict[str, Any]]:
             }
         )
 
+    slot_offsets = {s["offset"] for s in slots}
+    slots = [
+        s for s in slots
+        if sum(1 for o in slot_offsets if s["offset"] < o < s["end"]) < 2
+    ]
     return sorted(slots, key=lambda slot: slot["offset"])
 
 
@@ -434,6 +440,7 @@ def apply_ship_chest_additions(
                 "then retry the write. The backup created for this attempt remains available."
             ) from exc
         raise
+    update_checkpoint_zip(save_root, db_dir)
     result["backup_path"] = str(backup_path)
     return result
 
@@ -645,6 +652,6 @@ def apply_ship_chest_count_update(
                 "then retry the write. The backup created for this attempt remains available."
             ) from exc
         raise
-
+    update_checkpoint_zip(save_root, db_dir)
     result["backup_path"] = str(backup_path)
     return result

@@ -1,3 +1,31 @@
+# Windrose Save Tool — v1.1 Release Notes
+
+**Patch to restore compatibility with the v0.10.0 game update.** The upstream game moved its save format in three ways that broke inventory editing. All three are fixed here — if edits were silently doing nothing after the update, this is the release to grab.
+
+---
+
+## What changed in the game
+
+**Save directory renamed.**
+The game switched its live save location from `RocksDB/0.10.0/` to `RocksDB_v2/0.10.0/`. The tool was reading from — and writing to — the old path, which the game ignores entirely.
+
+**Inventory slot structure wrapped.**
+Item slots are now nested inside an outer container object in the save blob. The slot scanner was picking up both the wrapper and the real slots, then patching the wrapper. Counts appeared to change but the actual slots were untouched.
+
+**Checkpoint ZIP is the authoritative save on load.**
+The game restores its live database from a backup ZIP (`RocksDB_v2_Backups/…/_Latest.zip`) every time a save is loaded. Writing directly to the live DB worked until the game launched — then it wiped the changes clean. The tool now rebuilds this ZIP after every write so the changes survive the load.
+
+---
+
+## Fixes in this release
+
+- Resolve save path to `RocksDB_v2/0.10.0/` first, falling back to `RocksDB/0.10.0/` for older installs
+- Filter outer container objects from the slot list so only real item slots are patched
+- Rebuild the game's checkpoint ZIP after every write so changes persist through game load
+- Added `wood` to the confirmed item mapping (was missing from the lookup table despite being in the docs)
+
+---
+
 # Windrose Save Tool — v1.0 Release Notes
 
 **Ahoy, captain.** The first release of the Windrose Save Tool has weighed anchor. She's seaworthy, but she's fresh off the shipyard — expect some rough planks and the occasional unexpected squall. Sail with a backup and you'll make port fine.

@@ -6,6 +6,10 @@ from .manifest import locate_windrose_manifest, resolve_manifest_inventory_asset
 
 
 _MAPPED_ASSET_PATHS = {
+    "wood": {
+        "asset_path": "/R5BusinessRules/InventoryItems/DefaultItems/Resource/DA_DID_Resource_Wood_T01.DA_DID_Resource_Wood_T01",
+        "confirmed": True,
+    },
     "nails": {
         "asset_path": "/R5BusinessRules/InventoryItems/DefaultItems/Resource/DA_DID_Resource_Nails_T01.DA_DID_Resource_Nails_T01",
         "confirmed": True,
