@@ -18,6 +18,7 @@ from .ui_service import service
 class ConfigUpdate(BaseModel):
     save_root: str | None = None
     manifest_path: str | None = None
+    captain_uuid: str | None = None
 
 
 class ReportGenerateRequest(BaseModel):
@@ -113,7 +114,15 @@ def get_config() -> dict[str, object]:
 
 @app.put("/api/config")
 def put_config(request: ConfigUpdate) -> dict[str, object]:
-    return service.update_config(save_root=request.save_root, manifest_path=request.manifest_path)
+    return service.update_config(save_root=request.save_root, manifest_path=request.manifest_path, captain_uuid=request.captain_uuid)
+
+
+@app.get("/api/captains")
+def list_captains() -> dict[str, object]:
+    try:
+        return service.list_captains()
+    except Exception as exc:
+        _raise_api_error(exc)
 
 
 @app.post("/api/report/generate")

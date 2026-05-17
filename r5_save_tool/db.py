@@ -139,7 +139,8 @@ def open_accounts_db(save_root: Path, read_only: bool = True) -> R5Database:
     return R5Database(db_path, ACCOUNTS_CFS, read_only=read_only)
 
 
-def open_players_db(save_root: Path, read_only: bool = True) -> R5Database:
-    """Open the Players database."""
-    db_path = _locate_single_subdir(save_root / "Players")
+def open_players_db(save_root: Path, read_only: bool = True, captain_uuid: str | None = None) -> R5Database:
+    """Open the Players database, auto-selecting the default captain when multiple exist."""
+    from .save_context import resolve_player_dir  # lazy import avoids circular dependency
+    db_path = resolve_player_dir(save_root, captain_uuid)
     return R5Database(db_path, PLAYERS_CFS, read_only=read_only)

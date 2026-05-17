@@ -181,6 +181,10 @@ async function renderConfig(container) {
         <button onclick="clearField('cfg-manifest')">Clear</button>
       </div>
     </div>
+    <div class="form-group" id="captain-selector-group" style="display:none">
+      <label><strong>Captain</strong> <small>(multiple captains found — select which one to edit)</small></label>
+      <select id="cfg-captain" onchange="saveConfig()"></select>
+    </div>
     <div class="btn-row">
       <button class="btn-primary" onclick="saveConfig()">Save Config</button>
     </div>
@@ -198,10 +202,57 @@ async function loadConfigStatus() {
     const manifestInput = document.getElementById('cfg-manifest');
     if (saveRootInput) saveRootInput.value = S.status.save_root || '';
     if (manifestInput) manifestInput.value = S.status.manifest_path || '';
+    renderCaptainSelector(S.status);
+    updateSidebarCaptain(S.status);
     renderConfigStatus(statusDiv, S.status);
   } catch (e) {
     statusDiv.innerHTML = card(`<p class="err">Could not reach API: ${escHtml(e.message)}</p>`, 'card-err');
   }
+}
+
+function getActiveCaptainName(status) {
+  if (!status) return null;
+  const captains = status.captains || [];
+  if (!captains.length) return null;
+  if (captains.length === 1) return captains[0].name;
+  const uuid = status.captain_uuid;
+  if (uuid) {
+    const match = captains.find(c => c.uuid === uuid);
+    if (match) return match.name;
+  }
+  const def = captains.find(c => c.is_default);
+  return def ? def.name : captains[0].name;
+}
+
+function updateSidebarCaptain(status) {
+  const el = document.getElementById('sidebar-captain');
+  const nameEl = document.getElementById('sidebar-captain-name');
+  if (!el || !nameEl) return;
+  const name = getActiveCaptainName(status);
+  if (name) {
+    nameEl.textContent = name;
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+function renderCaptainSelector(status) {
+  const group = document.getElementById('captain-selector-group');
+  const select = document.getElementById('cfg-captain');
+  if (!group || !select) return;
+  const captains = status.captains || [];
+  if (captains.length <= 1) {
+    group.style.display = 'none';
+    return;
+  }
+  group.style.display = '';
+  const currentUuid = status.captain_uuid || '';
+  select.innerHTML = captains.map(c => {
+    const label = `${escHtml(c.name)} — ${escHtml(c.uuid.slice(0, 8))}…${c.is_default ? ' (last used)' : ''}`;
+    const selected = c.uuid === currentUuid || (!currentUuid && c.is_default) ? 'selected' : '';
+    return `<option value="${escHtml(c.uuid)}" ${selected}>${label}</option>`;
+  }).join('');
 }
 
 function renderConfigStatus(container, status) {
@@ -268,8 +319,10 @@ function renderConfigStatus(container, status) {
 async function saveConfig() {
   const save_root = (document.getElementById('cfg-save-root')?.value || '').trim() || null;
   const manifest_path = (document.getElementById('cfg-manifest')?.value || '').trim() || null;
+  const captainEl = document.getElementById('cfg-captain');
+  const captain_uuid = captainEl ? (captainEl.value || '').trim() || null : null;
   try {
-    S.status = await put('/api/config', { save_root, manifest_path });
+    S.status = await put('/api/config', { save_root, manifest_path, captain_uuid });
     await loadConfigStatus();
     toast('Config saved', 'success');
   } catch (e) {
@@ -956,6 +1009,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('item-picker-overlay')?.addEventListener('click', e => {
     if (e.target === e.currentTarget) closeItemPicker();
   });
+
+  // Pre-fetch status so the sidebar captain name is visible on any initial view
+  get('/api/config').then(status => {
+    S.status = status;
+    updateSidebarCaptain(status);
+  }).catch(() => {});
 
   render();
 });
