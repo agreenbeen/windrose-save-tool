@@ -172,6 +172,6 @@ exe = EXE(
     runtime_tmpdir=None,
     console=False,
     icon=str(Path(SPECPATH) / 'assets' / 'icon.ico'),
-    version_file='assets/windows_version_info.txt',
+    version=str(Path(SPECPATH) / 'assets' / 'windows_version_info.txt'),
     onefile=True,
 )
