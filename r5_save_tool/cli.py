@@ -18,14 +18,11 @@ from typing import TypedDict
 import click
 
 from .backup import backup_db, backup_details, list_backups, restore_backup
-from .db import (
-    _locate_single_subdir,
-    open_accounts_db,
-    open_players_db,
-)
+from .db import open_accounts_db, open_players_db
 from .dump import dump_db, dump_to_json, search_key, search_value_strings
 from .inventory_targets import resolve_inventory_asset_target
 from .manifest import locate_windrose_manifest, search_manifest_inventory_assets
+from .save_context import resolve_db_dir as _sc_resolve_db_dir
 from .schema import decode_key, format_decoded
 
 # ---------------------------------------------------------------------------
@@ -36,6 +33,7 @@ _DEFAULT_ROOT = (
     / "AppData" / "Local" / "R5" / "Saved" / "SaveProfiles"
 )
 _WINDROSE_PLAYERS_ROOT = Path.home() / "AppData" / "Local" / "Windrose" / "Saved" / "Players"
+_ROCKSDB_DIR_NAMES = ("RocksDB_v2", "RocksDB")
 
 
 class DirectoryComparison(TypedDict):
@@ -46,32 +44,31 @@ class DirectoryComparison(TypedDict):
 
 
 def _find_save_root(save_root: str | None) -> Path:
-    """Locate the 0.10.0 RocksDB root, resolving Steam ID subdirectory automatically."""
+    """Locate the versioned RocksDB root, preferring RocksDB_v2 over RocksDB."""
     base = Path(save_root) if save_root else _DEFAULT_ROOT
     if not base.exists():
         raise click.ClickException(f"Save root not found: {base}")
 
-    # If the user gave us a path ending in a Steam ID or profile, use as-is
-    versioned = base / "RocksDB" / "0.10.0"
-    if versioned.exists():
-        return versioned
+    for dir_name in _ROCKSDB_DIR_NAMES:
+        versioned = base / dir_name / "0.10.0"
+        if versioned.exists():
+            return versioned
 
-    # Walk one level to find a numeric Steam ID directory
     for child in base.iterdir():
         if child.is_dir() and child.name.isdigit():
-            candidate = child / "RocksDB" / "0.10.0"
-            if candidate.exists():
-                return candidate
+            for dir_name in _ROCKSDB_DIR_NAMES:
+                candidate = child / dir_name / "0.10.0"
+                if candidate.exists():
+                    return candidate
 
     raise click.ClickException(
-        f"Could not locate RocksDB/0.10.0 under {base}. "
+        f"Could not locate RocksDB_v2/0.10.0 or RocksDB/0.10.0 under {base}. "
         "Use --save-root to specify the exact path."
     )
 
 
-def _resolve_db_dir(save_root: Path, db: str) -> Path:
-    db_dir_parent = save_root / ("Players" if db == "players" else "Accounts")
-    return _locate_single_subdir(db_dir_parent)
+def _resolve_db_dir(save_root: Path, db: str, captain_uuid: str | None = None) -> Path:
+    return _sc_resolve_db_dir(save_root, db, captain_uuid=captain_uuid if db == "players" else None)  # type: ignore[arg-type]
 
 
 def _read_current_marker(db_path: Path) -> str | None:
@@ -85,9 +82,9 @@ def _file_count(root: Path) -> int:
     return sum(1 for path in root.rglob("*") if path.is_file()) if root.exists() else 0
 
 
-def _windrose_player_dir(save_root: Path) -> Path | None:
+def _windrose_player_dir(save_root: Path, captain_uuid: str | None = None) -> Path | None:
     try:
-        player_dir = _resolve_db_dir(save_root, "players")
+        player_dir = _resolve_db_dir(save_root, "players", captain_uuid)
     except FileNotFoundError:
         return None
     candidate = _WINDROSE_PLAYERS_ROOT / player_dir.name
@@ -118,11 +115,16 @@ def _compare_dirs(a: Path, b: Path) -> DirectoryComparison:
     "--save-root", envvar="R5_SAVE_ROOT", default=None,
     help="Path to the SaveProfiles folder (or R5_SAVE_ROOT env var).",
 )
+@click.option(
+    "--captain", envvar="R5_CAPTAIN", default=None,
+    help="Captain UUID to use when multiple captains exist (default: auto-select from account).",
+)
 @click.pass_context
-def cli(ctx: click.Context, save_root: str | None) -> None:
+def cli(ctx: click.Context, save_root: str | None, captain: str | None) -> None:
     """Windrose Save Tool — save-file inspection and editing tool."""
     ctx.ensure_object(dict)
     ctx.obj["save_root"] = save_root
+    ctx.obj["captain"] = captain
 
 
 # ---------------------------------------------------------------------------
@@ -141,9 +143,9 @@ def dump(ctx: click.Context, db: str, cf: tuple[str, ...], max_entries: int | No
          json_out: str | None) -> None:
     """Dump all key-value pairs from the database."""
     save_root = _find_save_root(ctx.obj["save_root"])
-    opener = open_players_db if db == "players" else open_accounts_db
+    captain = ctx.obj.get("captain")
 
-    with opener(save_root) as r5db:
+    with (open_players_db(save_root, captain_uuid=captain) if db == "players" else open_accounts_db(save_root)) as r5db:
         cf_filter = list(cf) if cf else None
         if json_out:
             dump_to_json(r5db, Path(json_out), cf_filter=cf_filter, max_per_cf=max_entries)
@@ -163,9 +165,10 @@ def dump(ctx: click.Context, db: str, cf: tuple[str, ...], max_entries: int | No
 def search_key_cmd(ctx: click.Context, pattern: str, db_choice: str) -> None:
     """Search for keys containing PATTERN (case-insensitive substring)."""
     save_root = _find_save_root(ctx.obj["save_root"])
+    captain = ctx.obj.get("captain")
     dbs_to_open = []
     if db_choice in ("players", "both"):
-        dbs_to_open.append(("players", open_players_db))
+        dbs_to_open.append(("players", lambda sr: open_players_db(sr, captain_uuid=captain)))
     if db_choice in ("accounts", "both"):
         dbs_to_open.append(("accounts", open_accounts_db))
 
@@ -194,9 +197,10 @@ def search_key_cmd(ctx: click.Context, pattern: str, db_choice: str) -> None:
 def search_value_cmd(ctx: click.Context, pattern: str, db_choice: str) -> None:
     """Search for values containing PATTERN as an embedded string."""
     save_root = _find_save_root(ctx.obj["save_root"])
+    captain = ctx.obj.get("captain")
     dbs_to_open = []
     if db_choice in ("players", "both"):
-        dbs_to_open.append(("players", open_players_db))
+        dbs_to_open.append(("players", lambda sr: open_players_db(sr, captain_uuid=captain)))
     if db_choice in ("accounts", "both"):
         dbs_to_open.append(("accounts", open_accounts_db))
 
@@ -227,7 +231,7 @@ def search_value_cmd(ctx: click.Context, pattern: str, db_choice: str) -> None:
 def get(ctx: click.Context, db: str, cf_name: str, key_hex: str) -> None:
     """Read a single value by column-family and hex-encoded key."""
     save_root = _find_save_root(ctx.obj["save_root"])
-    opener = open_players_db if db == "players" else open_accounts_db
+    captain = ctx.obj.get("captain")
 
     try:
         key_bytes = bytes.fromhex(key_hex)
@@ -235,7 +239,7 @@ def get(ctx: click.Context, db: str, cf_name: str, key_hex: str) -> None:
         # Allow plain string keys too
         key_bytes = key_hex.encode("utf-8")
 
-    with opener(save_root) as r5db:
+    with (open_players_db(save_root, captain_uuid=captain) if db == "players" else open_accounts_db(save_root)) as r5db:
         value = r5db.get(cf_name, key_bytes)
         if value is None:
             click.echo("Key not found.")
@@ -259,9 +263,9 @@ def put(ctx: click.Context, db: str, cf_name: str, key_hex: str, value_hex: str,
         no_backup: bool) -> None:
     """Write a value by column-family and hex-encoded key/value. Backs up first."""
     save_root = _find_save_root(ctx.obj["save_root"])
-    db_dir = _resolve_db_dir(save_root, db)
+    captain = ctx.obj.get("captain")
+    db_dir = _resolve_db_dir(save_root, db, captain)
     _echo_resolved_db_path(db, db_dir)
-    opener = open_players_db if db == "players" else open_accounts_db
 
     try:
         key_bytes = bytes.fromhex(key_hex)
@@ -276,7 +280,7 @@ def put(ctx: click.Context, db: str, cf_name: str, key_hex: str, value_hex: str,
     if not no_backup:
         backup_db(db_dir)
 
-    with opener(save_root, read_only=False) as r5db:
+    with (open_players_db(save_root, read_only=False, captain_uuid=captain) if db == "players" else open_accounts_db(save_root, read_only=False)) as r5db:
         r5db.put(cf_name, key_bytes, value_bytes)
         click.echo(f"Written {len(value_bytes)} bytes to [{cf_name}] key={decode_key(key_bytes)!r}")
 
@@ -299,13 +303,14 @@ def report(ctx: click.Context, out_path: str | None) -> None:
     from .report import generate_html_report
 
     save_root = _find_save_root(ctx.obj["save_root"])
+    captain = ctx.obj.get("captain")
     canonical_out = Path("tmp") / "report" / "r5_save_report.html"
     canonical_out.parent.mkdir(parents=True, exist_ok=True)
     if out_path:
         click.echo(
             "Note: --out is deprecated for report; writing to tmp/report/r5_save_report.html"
         )
-    generate_html_report(save_root, canonical_out)
+    generate_html_report(save_root, canonical_out, captain_uuid=captain)
 
 
 # ---------------------------------------------------------------------------
@@ -323,10 +328,10 @@ def decode(ctx: click.Context, db: str, cf_name: str, out_path: str | None) -> N
     from .ue_parser import parse_r5_value
 
     save_root = _find_save_root(ctx.obj["save_root"])
-    opener = open_players_db if db == "players" else open_accounts_db
+    captain = ctx.obj.get("captain")
 
     results = {}
-    with opener(save_root) as r5db:
+    with (open_players_db(save_root, captain_uuid=captain) if db == "players" else open_accounts_db(save_root)) as r5db:
         for key_bytes, val_bytes in r5db.iter_cf(cf_name):
             key_str = decode_key(key_bytes)
             parsed = parse_r5_value(val_bytes)
@@ -360,7 +365,7 @@ def coin_inspect_cmd(ctx: click.Context, out_path: str) -> None:
     from .coin import inspect_coins
 
     save_root = _find_save_root(ctx.obj["save_root"])
-    result = inspect_coins(save_root, Path(out_path))
+    result = inspect_coins(save_root, Path(out_path), captain_uuid=ctx.obj.get("captain"))
 
     click.echo(f"Analyzed containers: {len(result['containers'])}")
     for c in result["containers"]:
@@ -410,7 +415,7 @@ def coin_probe_cmd(ctx: click.Context, cf_name: str, out_path: str) -> None:
     save_root = _find_save_root(ctx.obj["save_root"])
     containers: list[dict] = []
 
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=ctx.obj.get("captain")) as db:
         for key_bytes, val_bytes in db.iter_cf(cf_name):
             fields_by_object: list[dict] = []
             for obj in extract_type3_objects(val_bytes):
@@ -482,6 +487,7 @@ def coin_map_cmd(
         person_guinea=person_guinea,
         ship_piastre=ship_piastre,
         ship_guinea=ship_guinea,
+        captain_uuid=ctx.obj.get("captain"),
     )
 
     Path(out_path).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -536,7 +542,8 @@ def coin_set_cmd(
         raise click.ClickException("No target values specified. Use --set-* options.")
 
     save_root = _find_save_root(ctx.obj["save_root"])
-    _echo_resolved_db_path("players", _resolve_db_dir(save_root, "players"))
+    captain = ctx.obj.get("captain")
+    _echo_resolved_db_path("players", _resolve_db_dir(save_root, "players", captain))
     result = apply_coin_values(
         save_root,
         known_person_piastre=known_person_piastre,
@@ -548,6 +555,7 @@ def coin_set_cmd(
         new_ship_piastre=set_ship_piastre,
         new_ship_guinea=set_ship_guinea,
         dry_run=dry_run,
+        captain_uuid=captain,
     )
 
     Path(out_path).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -585,7 +593,7 @@ def inventory_inspect_cmd(ctx: click.Context, ship_capacity: int, out_path: str)
     from .inventory import inspect_inventory
 
     save_root = _find_save_root(ctx.obj["save_root"])
-    result = inspect_inventory(save_root, ship_capacity=ship_capacity)
+    result = inspect_inventory(save_root, ship_capacity=ship_capacity, captain_uuid=ctx.obj.get("captain"))
 
     Path(out_path).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -673,6 +681,7 @@ def inventory_plan_cmd(
         player_open_slots_per_stage=player_open_slots_per_stage,
         ship_capacity=ship_capacity,
         strict_manifest=strict_manifest,
+        captain_uuid=ctx.obj.get("captain"),
     )
 
     Path(out_path).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -770,7 +779,8 @@ def inventory_add_ship_cmd(
         parsed_targets[name] = amount
 
     save_root = _find_save_root(ctx.obj["save_root"])
-    _echo_resolved_db_path("players", _resolve_db_dir(save_root, "players"))
+    captain = ctx.obj.get("captain")
+    _echo_resolved_db_path("players", _resolve_db_dir(save_root, "players", captain))
     result = apply_ship_chest_additions(
         save_root,
         targets=parsed_targets,
@@ -778,6 +788,7 @@ def inventory_add_ship_cmd(
         allow_assumed_assets=confirm_assumed,
         strict_manifest=strict_manifest,
         preferred_ship_key_prefix=ship_key_prefix,
+        captain_uuid=captain,
     )
 
     if out_path:
@@ -880,7 +891,8 @@ def inventory_set_ship_count_cmd(
         raise click.BadParameter("--count must be >= 0")
 
     save_root = _find_save_root(ctx.obj["save_root"])
-    _echo_resolved_db_path("players", _resolve_db_dir(save_root, "players"))
+    captain = ctx.obj.get("captain")
+    _echo_resolved_db_path("players", _resolve_db_dir(save_root, "players", captain))
 
     result = apply_ship_chest_count_update(
         save_root,
@@ -891,6 +903,7 @@ def inventory_set_ship_count_cmd(
         dry_run=not write,
         strict_manifest=strict_manifest,
         preferred_ship_key_prefix=ship_key_prefix,
+        captain_uuid=captain,
     )
 
     if out_path:
@@ -1008,7 +1021,7 @@ def manifest_check_cmd(
 def backups(ctx: click.Context, db: str) -> None:
     """List existing backups for a database."""
     save_root = _find_save_root(ctx.obj["save_root"])
-    db_dir = _resolve_db_dir(save_root, db)
+    db_dir = _resolve_db_dir(save_root, db, ctx.obj.get("captain"))
     _echo_resolved_db_path(db, db_dir)
     existing = list_backups(db_dir)
     if not existing:
@@ -1031,7 +1044,7 @@ def backups(ctx: click.Context, db: str) -> None:
 def restore_backup_cmd(ctx: click.Context, db: str, backup_name: str) -> None:
     """Restore a backup into the active DB path using an exact replace, not an overlay copy."""
     save_root = _find_save_root(ctx.obj["save_root"])
-    db_dir = _resolve_db_dir(save_root, db)
+    db_dir = _resolve_db_dir(save_root, db, ctx.obj.get("captain"))
     _echo_resolved_db_path(db, db_dir)
 
     backup_root = Path(__file__).resolve().parent / "_backups" / db_dir.parent.name
@@ -1052,9 +1065,10 @@ def restore_backup_cmd(ctx: click.Context, db: str, backup_name: str) -> None:
 def doctor(ctx: click.Context) -> None:
     """Report active save paths and flag divergent live save locations."""
     save_root = _find_save_root(ctx.obj["save_root"])
-    player_dir = _resolve_db_dir(save_root, "players")
+    captain = ctx.obj.get("captain")
+    player_dir = _resolve_db_dir(save_root, "players", captain)
     accounts_dir = _resolve_db_dir(save_root, "accounts")
-    windrose_player_dir = _windrose_player_dir(save_root)
+    windrose_player_dir = _windrose_player_dir(save_root, captain)
 
     click.echo(f"Resolved save root: {save_root}")
     click.echo(f"Players DB path: {player_dir}")

@@ -19,8 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from .backup import backup_db
+from .checkpoint_zip import update_checkpoint_zip
 from .coin import extract_type3_objects
-from .db import _locate_single_subdir, open_players_db
+from .db import open_players_db
+from .save_context import resolve_player_dir
 from .inventory_targets import resolve_inventory_asset_target
 from .ue_parser import parse_r5_value
 
@@ -90,6 +92,11 @@ def _extract_ship_chest_slots(blob: bytes) -> list[dict[str, Any]]:
             }
         )
 
+    slot_offsets = {s["offset"] for s in slots}
+    slots = [
+        s for s in slots
+        if sum(1 for o in slot_offsets if s["offset"] < o < s["end"]) < 2
+    ]
     return sorted(slots, key=lambda slot: slot["offset"])
 
 
@@ -106,11 +113,11 @@ def _collect_named_values(obj: Any, name: str) -> list[str]:
     return values
 
 
-def _find_active_ship_markers(save_root: Path) -> list[str]:
+def _find_active_ship_markers(save_root: Path, captain_uuid: str | None = None) -> list[str]:
     # Priority order matters for default ship targeting.
     wanted = ("PossessedShipId", "FlagshipId", "DefaultShipId")
     markers: list[str] = []
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         for _, blob in db.iter_cf("R5BLPlayer"):
             try:
                 parsed = parse_r5_value(blob)
@@ -218,9 +225,10 @@ def _select_target_ship_blob(
     save_root: Path,
     *,
     preferred_ship_key_prefix: str | None = None,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         for key_bytes, blob in db.iter_cf("R5BLShip"):
             slots = _extract_ship_chest_slots(blob)
             empty_slots = [slot for slot in slots if slot["empty"]]
@@ -256,7 +264,7 @@ def _select_target_ship_blob(
         return filtered[0]
 
     # Default behavior: prefer the active ship referenced by player marker IDs.
-    active_markers = _find_active_ship_markers(save_root)
+    active_markers = _find_active_ship_markers(save_root, captain_uuid=captain_uuid)
     if active_markers:
         # Most reliable mapping: marker values correspond to R5BLShip key hex.
         by_key: dict[str, dict[str, Any]] = {}
@@ -288,8 +296,9 @@ def plan_ship_chest_additions(
     targets: dict[str, int],
     *,
     preferred_ship_key_prefix: str | None = None,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
-    ship = _select_target_ship_blob(save_root, preferred_ship_key_prefix=preferred_ship_key_prefix)
+    ship = _select_target_ship_blob(save_root, preferred_ship_key_prefix=preferred_ship_key_prefix, captain_uuid=captain_uuid)
     requested: list[dict[str, Any]] = []
     for name, amount in targets.items():
         resolved = resolve_inventory_asset_target(name)
@@ -344,6 +353,7 @@ def apply_ship_chest_additions(
     allow_assumed_assets: bool = False,
     strict_manifest: bool = False,
     preferred_ship_key_prefix: str | None = None,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
     if strict_manifest:
         for target_name in targets:
@@ -353,6 +363,7 @@ def apply_ship_chest_additions(
         save_root,
         targets,
         preferred_ship_key_prefix=preferred_ship_key_prefix,
+        captain_uuid=captain_uuid,
     )
     assumed_items = [item for item in plan["plan"] if not item["mapping_confirmed"]]
     if assumed_items and not (dry_run or allow_assumed_assets):
@@ -363,7 +374,7 @@ def apply_ship_chest_additions(
         )
     key_bytes = bytes.fromhex(plan["key_hex"])
 
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         original_blob = db.get(plan["cf"], key_bytes)
     if original_blob is None:
         raise RuntimeError("Ship container disappeared before update")
@@ -421,10 +432,10 @@ def apply_ship_chest_additions(
     if dry_run:
         return result
 
-    db_dir = _locate_single_subdir(save_root / "Players")
+    db_dir = resolve_player_dir(save_root, captain_uuid)
     backup_path = backup_db(db_dir)
     try:
-        with open_players_db(save_root, read_only=False) as db:
+        with open_players_db(save_root, read_only=False, captain_uuid=captain_uuid) as db:
             db.put(plan["cf"], key_bytes, bytes(mutable_blob))
     except Exception as exc:
         message = str(exc)
@@ -434,6 +445,7 @@ def apply_ship_chest_additions(
                 "then retry the write. The backup created for this attempt remains available."
             ) from exc
         raise
+    update_checkpoint_zip(save_root, db_dir)
     result["backup_path"] = str(backup_path)
     return result
 
@@ -447,6 +459,7 @@ def plan_ship_chest_count_update(
     update_all_matches: bool = False,
     strict_manifest: bool = False,
     preferred_ship_key_prefix: str | None = None,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
     """
     Plan a count-only update for existing ship chest stack(s).
@@ -459,7 +472,7 @@ def plan_ship_chest_count_update(
 
     physical_matches: list[dict[str, Any]] = []
     normalized_prefix = preferred_ship_key_prefix.strip().lower() if preferred_ship_key_prefix else None
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         for key_bytes, blob in db.iter_cf("R5BLShip"):
             key_hex = key_bytes.hex()
             if normalized_prefix and not key_hex.lower().startswith(normalized_prefix):
@@ -560,6 +573,7 @@ def apply_ship_chest_count_update(
     dry_run: bool = True,
     strict_manifest: bool = False,
     preferred_ship_key_prefix: str | None = None,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
     """Apply a count-only update for existing ship chest stacks."""
     plan_result = plan_ship_chest_count_update(
@@ -570,6 +584,7 @@ def apply_ship_chest_count_update(
         update_all_matches=update_all_matches,
         strict_manifest=strict_manifest,
         preferred_ship_key_prefix=preferred_ship_key_prefix,
+        captain_uuid=captain_uuid,
     )
 
     plans = plan_result["plan"]
@@ -585,7 +600,7 @@ def apply_ship_chest_count_update(
     for p in plans:
         by_blob.setdefault((p["cf"], p["key_hex"]), []).append(p)
 
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         originals = {
             (cf, key_hex): db.get(cf, bytes.fromhex(key_hex))
             for (cf, key_hex) in by_blob
@@ -631,10 +646,10 @@ def apply_ship_chest_count_update(
 
         patched_blobs[(cf, key_hex)] = bytes(mutable_blob)
 
-    db_dir = _locate_single_subdir(save_root / "Players")
+    db_dir = resolve_player_dir(save_root, captain_uuid)
     backup_path = backup_db(db_dir)
     try:
-        with open_players_db(save_root, read_only=False) as dbw:
+        with open_players_db(save_root, read_only=False, captain_uuid=captain_uuid) as dbw:
             for (cf, key_hex), blob in patched_blobs.items():
                 dbw.put(cf, bytes.fromhex(key_hex), blob)
     except Exception as exc:
@@ -645,6 +660,6 @@ def apply_ship_chest_count_update(
                 "then retry the write. The backup created for this attempt remains available."
             ) from exc
         raise
-
+    update_checkpoint_zip(save_root, db_dir)
     result["backup_path"] = str(backup_path)
     return result

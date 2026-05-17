@@ -18,7 +18,7 @@ from typing import Any
 
 import click
 
-from .db import open_players_db, _locate_single_subdir
+from .db import open_players_db
 from .inventory import inspect_inventory
 from .backup import backup_db
 
@@ -46,9 +46,9 @@ def resolve_asset_id(name: str) -> str | None:
     return None
 
 
-def get_container_key(save_root: Path, container: str) -> tuple[str, bytes] | None:
+def get_container_key(save_root: Path, container: str, captain_uuid: str | None = None) -> tuple[str, bytes] | None:
     """Get (cf_name, key_bytes) for a container (ship or player)."""
-    result = inspect_inventory(save_root)
+    result = inspect_inventory(save_root, captain_uuid=captain_uuid)
     containers = result.get("containers", [])
 
     if container == "ship":
@@ -65,9 +65,9 @@ def get_container_key(save_root: Path, container: str) -> tuple[str, bytes] | No
     return None
 
 
-def preview_add(save_root: Path, container: str, items_to_add: dict[str, int]) -> dict[str, Any]:
+def preview_add(save_root: Path, container: str, items_to_add: dict[str, int], captain_uuid: str | None = None) -> dict[str, Any]:
     """Preview what will be added without writing."""
-    result = inspect_inventory(save_root)
+    result = inspect_inventory(save_root, captain_uuid=captain_uuid)
 
     containers = result.get("containers", [])
     cf_name = None
@@ -119,11 +119,18 @@ def preview_add(save_root: Path, container: str, items_to_add: dict[str, int]) -
     default=None,
     help="Path to save root (or R5_SAVE_ROOT env var).",
 )
+@click.option(
+    "--captain",
+    envvar="R5_CAPTAIN",
+    default=None,
+    help="Captain UUID when multiple captains exist (default: auto-select from account).",
+)
 def cmd_inventory_add(
     container: str,
     items_str: tuple[str, ...],
     preview_only: bool,
     save_root: str | None,
+    captain: str | None,
 ) -> None:
     """Add items to inventory with backup-first safety."""
     from .db import R5Database
@@ -147,7 +154,7 @@ def cmd_inventory_add(
         items_to_add[name.strip()] = qty
 
     # Preview
-    preview = preview_add(save_root_obj, container, items_to_add)
+    preview = preview_add(save_root_obj, container, items_to_add, captain_uuid=captain)
 
     if "error" in preview:
         raise click.ClickException(preview["error"])
