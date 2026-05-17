@@ -1,3 +1,5 @@
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/agreenbeen/windrose-save-tool/total)
+
 # Windrose Save Tool
 
 A desktop app for safely editing your Windrose save game. Add items to your ship's hold, adjust coin amounts, and manage backups — all through a graphical interface, no commands required.
