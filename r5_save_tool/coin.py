@@ -321,12 +321,12 @@ def _inspect_blob(blob: bytes) -> dict[str, Any]:
     }
 
 
-def inspect_coins(save_root: Path, out_path: Path | None = None) -> dict[str, Any]:
+def inspect_coins(save_root: Path, out_path: Path | None = None, captain_uuid: str | None = None) -> dict[str, Any]:
     """Inspect coin data for player and ship containers and return an analysis dict."""
     containers: list[dict[str, Any]] = []
     all_coin_items: list[dict[str, Any]] = []
 
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         for cf_name in ("R5BLPlayer", "R5BLShip"):
             for key_bytes, val_bytes in db.iter_cf(cf_name):
                 blob_result = _inspect_blob(val_bytes)
@@ -453,6 +453,7 @@ def map_coin_offsets_by_known_values(
     person_guinea: int,
     ship_piastre: int,
     ship_guinea: int,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
     """
     Locate candidate writable int32 offsets for coin amounts using known current values.
@@ -465,7 +466,7 @@ def map_coin_offsets_by_known_values(
     ]
 
     entries: dict[str, list[dict[str, Any]]] = {"R5BLPlayer": [], "R5BLShip": []}
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         for cf_name in ("R5BLPlayer", "R5BLShip"):
             for key_bytes, val_bytes in db.iter_cf(cf_name):
                 inspected = _inspect_blob(val_bytes)
@@ -569,6 +570,7 @@ def apply_coin_values(
     new_ship_piastre: int | None,
     new_ship_guinea: int | None,
     dry_run: bool = True,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
     """
     Apply calibrated coin updates directly to mapped int32 offsets.
@@ -583,6 +585,7 @@ def apply_coin_values(
         person_guinea=known_person_guinea,
         ship_piastre=known_ship_piastre,
         ship_guinea=known_ship_guinea,
+        captain_uuid=captain_uuid,
     )
 
     desired = {
@@ -593,7 +596,7 @@ def apply_coin_values(
     }
 
     updates: list[dict[str, Any]] = []
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         for label, new_val in desired.items():
             if new_val is None:
                 continue
@@ -629,16 +632,16 @@ def apply_coin_values(
 
     if not dry_run and updates:
         from .backup import backup_db
-        from .db import _locate_single_subdir
+        from .save_context import resolve_player_dir
 
-        db_dir = _locate_single_subdir(save_root / "Players")
+        db_dir = resolve_player_dir(save_root, captain_uuid)
         backup_path = backup_db(db_dir)
 
         by_blob: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for u in updates:
             by_blob.setdefault((u["cf"], u["key_hex"]), []).append(u)
 
-        with open_players_db(save_root, read_only=False) as dbw:
+        with open_players_db(save_root, read_only=False, captain_uuid=captain_uuid) as dbw:
             for (cf_name, key_hex), blob_updates in by_blob.items():
                 key_bytes = bytes.fromhex(key_hex)
                 raw = dbw.get(cf_name, key_bytes)

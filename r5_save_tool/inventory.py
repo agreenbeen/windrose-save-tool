@@ -416,13 +416,13 @@ def _extract_inventory_items(blob: bytes) -> list[dict[str, Any]]:
     return out
 
 
-def inspect_inventory(save_root: Path, *, ship_capacity: int = 28) -> dict[str, Any]:
+def inspect_inventory(save_root: Path, *, ship_capacity: int = 28, captain_uuid: str | None = None) -> dict[str, Any]:
     """Inspect player and ship inventory items and aggregate totals."""
     containers: list[dict[str, Any]] = []
     raw_items: list[dict[str, Any]] = []
     ship_labels: dict[str, str] = {}  # key_hex -> human name
 
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         # First pass: build ship name labels so every item can reference them
         ship_index = 0
         for key_bytes, val_bytes in db.iter_cf("R5BLShip"):
@@ -506,11 +506,12 @@ def build_inventory_stage_plan(
     player_open_slots_per_stage: int = 20,
     ship_capacity: int = 28,
     strict_manifest: bool = False,
+    captain_uuid: str | None = None,
 ) -> dict[str, Any]:
     """
     Build a stage estimate for target totals under player/ship slot constraints.
     """
-    inv = inspect_inventory(save_root, ship_capacity=ship_capacity)
+    inv = inspect_inventory(save_root, ship_capacity=ship_capacity, captain_uuid=captain_uuid)
     by_norm = {a["normalized"]: a for a in inv["aggregates"]}
 
     item_plan: list[dict[str, Any]] = []

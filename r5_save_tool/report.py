@@ -729,6 +729,7 @@ def _inventory_snapshot_html(
 def generate_html_report(
     save_root: Path,
     out_path: Path,
+    captain_uuid: str | None = None,
 ) -> None:
     """
     Generate a self-contained HTML report covering both databases.
@@ -754,7 +755,7 @@ def generate_html_report(
     active_ship_markers: list[str] = []
 
     # --- Players DB ---
-    with open_players_db(save_root) as db:
+    with open_players_db(save_root, captain_uuid=captain_uuid) as db:
         for cf in db.column_families:
             for key_bytes, val_bytes in db.iter_cf(cf):
                 key = decode_key(key_bytes)

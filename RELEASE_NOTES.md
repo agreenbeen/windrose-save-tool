@@ -1,3 +1,37 @@
+# Windrose Save Tool — v1.2 Release Notes
+
+**Multi-captain support.** Saves with more than one captain now work correctly across every screen. The tool auto-selects the right captain from your account's default, or you can switch captains explicitly from the Config screen or the `--captain` flag.
+
+---
+
+## What changed
+
+**Multi-captain save support**
+Saves that contain more than one `Players/` directory are now handled end-to-end. The tool reads the `DefaultPlayerId` from your account to auto-select the active captain. No extra configuration needed for single-captain saves — nothing changes there.
+
+**Captain selector in the Config tab**
+When more than one captain is detected, a dropdown appears in the Config tab. Each entry shows the captain's name, a short UUID prefix, and which one is marked as last used. Switching the dropdown re-routes all inventory, coin, and report operations to that captain immediately.
+
+**Active captain shown in the sidebar**
+The selected captain's name is pinned to the bottom of the nav sidebar, visible from any screen.
+
+**CLI `--captain` flag and `R5_CAPTAIN` env var**
+```
+r5-save --captain <UUID> inventory-inspect
+r5-save list-captains
+```
+`list-captains` prints every captain with their UUID and which is the default. `--captain` overrides auto-selection on any command.
+
+---
+
+## Fixes and behaviour
+
+- All inventory, coin, and report operations correctly target the selected captain's Players DB
+- Auto-selection falls back gracefully when the account DB is unreadable and instructs you to pass `--captain` explicitly
+- No change in behaviour for single-captain saves
+
+---
+
 # Windrose Save Tool — v1.1 Release Notes
 
 **Patch to restore compatibility with the v0.10.0 game update.** The upstream game moved its save format in three ways that broke inventory editing. All three are fixed here — if edits were silently doing nothing after the update, this is the release to grab.

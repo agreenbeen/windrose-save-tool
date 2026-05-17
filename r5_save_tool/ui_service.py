@@ -19,7 +19,7 @@ from .manifest import (
 )
 from .paths import get_writable_base
 from .report import generate_html_report
-from .save_context import doctor_status, find_save_root, resolve_db_dir
+from .save_context import doctor_status, find_save_root, list_captains, resolve_db_dir
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -64,6 +64,7 @@ def _friendly_item_label(asset_name: str) -> str:
 class UIConfigState:
     save_root: str | None = os.environ.get("R5_SAVE_ROOT")
     manifest_path: str | None = os.environ.get("WINDROSE_MANIFEST_PATH") or os.environ.get("STEAM_MANIFEST_PATH")
+    captain_uuid: str | None = None
 
 
 class UIService:
@@ -84,6 +85,9 @@ class UIService:
     def _resolve_save_root(self) -> Path:
         return find_save_root(self._config.save_root)
 
+    def _captain_uuid(self) -> str | None:
+        return self._config.captain_uuid
+
     def _config_snapshot(self) -> dict[str, object]:
         manifest = locate_windrose_manifest()
         resolved_save_root = None
@@ -96,6 +100,14 @@ class UIService:
         except FileNotFoundError as exc:
             save_root_error = str(exc)
 
+        captains: list[dict[str, object]] = []
+        try:
+            if resolved_save_root:
+                from .save_context import list_captains as _list_captains
+                captains = _list_captains(Path(resolved_save_root))
+        except Exception:
+            pass
+
         return {
             **asdict(self._config),
             "resolved_save_root": resolved_save_root,
@@ -103,14 +115,16 @@ class UIService:
             "resolved_manifest_path": str(manifest) if manifest else None,
             "manifest_found": manifest is not None,
             "doctor": doctor,
+            "captains": captains,
         }
 
     def get_status(self) -> dict[str, object]:
         return self._config_snapshot()
 
-    def update_config(self, *, save_root: str | None, manifest_path: str | None) -> dict[str, object]:
+    def update_config(self, *, save_root: str | None, manifest_path: str | None, captain_uuid: str | None = None) -> dict[str, object]:
         self._config.save_root = (save_root or "").strip() or None
         self._config.manifest_path = (manifest_path or "").strip() or None
+        self._config.captain_uuid = (captain_uuid or "").strip() or None
         if self._config.save_root is None:
             os.environ.pop("R5_SAVE_ROOT", None)
         else:
@@ -118,11 +132,15 @@ class UIService:
         self._sync_manifest_env()
         return self._config_snapshot()
 
+    def list_captains(self) -> dict[str, object]:
+        save_root = self._resolve_save_root()
+        return {"captains": list_captains(save_root)}
+
     def generate_report(self, *, out_path: str | None = None) -> dict[str, object]:
         save_root = self._resolve_save_root()
         final_path = Path(out_path) if out_path else DEFAULT_REPORT_PATH
         final_path.parent.mkdir(parents=True, exist_ok=True)
-        generate_html_report(save_root, final_path)
+        generate_html_report(save_root, final_path, captain_uuid=self._captain_uuid())
         return {
             "report_path": str(final_path),
             "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -215,7 +233,7 @@ class UIService:
 
     def inspect_inventory(self, *, ship_capacity: int = 28) -> dict[str, object]:
         save_root = self._resolve_save_root()
-        return inspect_inventory(save_root, ship_capacity=ship_capacity)
+        return inspect_inventory(save_root, ship_capacity=ship_capacity, captain_uuid=self._captain_uuid())
 
     def inventory_plan(
         self,
@@ -232,6 +250,7 @@ class UIService:
             player_open_slots_per_stage=player_open_slots_per_stage,
             ship_capacity=ship_capacity,
             strict_manifest=strict_manifest,
+            captain_uuid=self._captain_uuid(),
         )
 
     def apply_ship_add(
@@ -251,6 +270,7 @@ class UIService:
             allow_assumed_assets=allow_assumed_assets,
             strict_manifest=strict_manifest,
             preferred_ship_key_prefix=preferred_ship_key_prefix,
+            captain_uuid=self._captain_uuid(),
         )
 
     def apply_ship_count(
@@ -274,11 +294,12 @@ class UIService:
             dry_run=dry_run,
             strict_manifest=strict_manifest,
             preferred_ship_key_prefix=preferred_ship_key_prefix,
+            captain_uuid=self._captain_uuid(),
         )
 
     def inspect_coins(self) -> dict[str, object]:
         save_root = self._resolve_save_root()
-        return inspect_coins(save_root)
+        return inspect_coins(save_root, captain_uuid=self._captain_uuid())
 
     def map_coins(
         self,
@@ -295,6 +316,7 @@ class UIService:
             person_guinea=person_guinea,
             ship_piastre=ship_piastre,
             ship_guinea=ship_guinea,
+            captain_uuid=self._captain_uuid(),
         )
 
     def apply_coins(
@@ -322,11 +344,12 @@ class UIService:
             new_ship_piastre=new_ship_piastre,
             new_ship_guinea=new_ship_guinea,
             dry_run=dry_run,
+            captain_uuid=self._captain_uuid(),
         )
 
     def list_backups(self, *, db: Literal["players", "accounts"]) -> dict[str, object]:
         save_root = self._resolve_save_root()
-        db_dir = resolve_db_dir(save_root, db)
+        db_dir = resolve_db_dir(save_root, db, captain_uuid=self._captain_uuid() if db == "players" else None)
         backups: list[dict[str, object]] = []
         for backup_path in list_backups(db_dir):
             info = backup_details(backup_path)
@@ -347,7 +370,7 @@ class UIService:
 
     def restore_backup(self, *, db: Literal["players", "accounts"], backup_name: str) -> dict[str, object]:
         save_root = self._resolve_save_root()
-        db_dir = resolve_db_dir(save_root, db)
+        db_dir = resolve_db_dir(save_root, db, captain_uuid=self._captain_uuid() if db == "players" else None)
         backup_root = get_writable_base() / "_backups" / db_dir.parent.name
         backup_path = backup_root / backup_name
         if not backup_path.exists():

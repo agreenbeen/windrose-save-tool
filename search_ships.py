@@ -18,9 +18,9 @@ def _walk_strings(value):
             yield from _walk_strings(item)
 
 
-def search_ship_strings(save_root: Path, patterns: list[str], cf_name: str = "R5BLShip") -> int:
+def search_ship_strings(save_root: Path, patterns: list[str], cf_name: str = "R5BLShip", captain_uuid: str | None = None) -> int:
     try:
-        db = open_players_db(save_root)
+        db = open_players_db(save_root, captain_uuid=captain_uuid)
     except Exception as exc:
         print(f"Error opening DB at {save_root}: {exc}")
         return 1
@@ -93,8 +93,13 @@ def main() -> int:
         default="R5BLShip",
         help="Column family to scan (default: R5BLShip).",
     )
+    parser.add_argument(
+        "--captain",
+        default=None,
+        help="Captain UUID when multiple captains exist (default: auto-select from account).",
+    )
     args = parser.parse_args()
-    return search_ship_strings(Path(args.save_root), args.pattern, cf_name=args.cf)
+    return search_ship_strings(Path(args.save_root), args.pattern, cf_name=args.cf, captain_uuid=args.captain)
 
 
 if __name__ == "__main__":
