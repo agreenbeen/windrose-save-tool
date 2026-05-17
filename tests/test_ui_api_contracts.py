@@ -3,6 +3,8 @@
 These tests validate that the API interface remains stable and that changes
 to request/response models are caught immediately.
 """
+import os
+
 import pytest
 from pydantic import ValidationError
 from r5_save_tool.ui_api import (
@@ -16,6 +18,7 @@ from r5_save_tool.ui_api import (
     CoinMapRequest,
     CoinSetRequest,
     RestoreBackupRequest,
+    _resolve_ui_listen_port,
 )
 
 
@@ -260,3 +263,15 @@ class TestCoinMapRequestContract:
         assert all(isinstance(getattr(model, f), int) for f in [
             "person_piastre", "person_guinea", "ship_piastre", "ship_guinea"
         ])
+
+
+class TestUiListenPortResolution:
+    def test_resolve_auto_assigns_and_syncs_env(self, monkeypatch):
+        monkeypatch.setenv("R5_SAVE_UI_PORT", "auto")
+        port = _resolve_ui_listen_port()
+        assert port > 0
+        assert os.environ["R5_SAVE_UI_PORT"] == str(port)
+
+    def test_resolve_fixed_port_unchanged(self, monkeypatch):
+        monkeypatch.setenv("R5_SAVE_UI_PORT", "9123")
+        assert _resolve_ui_listen_port() == 9123

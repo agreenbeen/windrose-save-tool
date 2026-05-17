@@ -8,10 +8,6 @@ dependencies = [
     "fastapi>=0.116",
     "uvicorn>=0.35",
     "pywebview>=5.0",
-    "PySide6>=6.9",
-    "qtpy>=2.4",
-    "bottle>=0.13",
-    "proxy-tools>=0.1",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +17,7 @@ dev = [
 ]
 build = [
     "pyinstaller>=6.19",
+    "pillow>=10.0",
 ]
 
 [project.scripts]

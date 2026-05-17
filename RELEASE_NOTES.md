@@ -1,3 +1,57 @@
+# Windrose Save Tool — v1.3.0 Release Notes
+
+**Smaller, faster Windows desktop build.** This release ships a single `windrose-save-tool.exe` (~19 MiB) that opens a native window via the system WebView2 runtime — no bundled Qt stack. Double-click from Explorer works without a console window. Save editing behaviour is unchanged from v1.2; multi-captain support remains fully available.
+
+---
+
+## What changed
+
+**Much smaller download**
+The packaged app no longer bundles PySide6/Qt. The one-file EXE is roughly half the size of earlier desktop builds while keeping the same UI and API.
+
+**Native WebView2 shell**
+The window uses Microsoft Edge WebView2 (already on Windows 10 1803+ and Windows 11). Startup is quicker and the install footprint is smaller. If WebView2 is missing, the app can still fall back to your default browser with the same UI.
+
+**Double-click friendly launcher**
+`windrose-save-tool.exe` runs as a GUI app (no black console window). Explorer launches are safe when standard output streams are unavailable.
+
+**Smarter local networking**
+- One port serves both the on-screen UI (`/ui/…`) and the API (`/api/…`).
+- Set `R5_SAVE_UI_PORT=auto` (or `0`) to pick a free port when **8765** is already in use.
+- WebView2 loopback and AppContainer rules are configured so the embedded window can reach `http://127.0.0.1` reliably.
+
+**Branding**
+Custom app icon in the taskbar, window, and file properties.
+
+---
+
+## Fixes and behaviour
+
+- Embedded WebView2 can reach the local API (private network / loopback restrictions addressed)
+- Frozen builds use a dedicated internal server process so PyInstaller one-file startup stays stable
+- Tool-managed backups still live in a folder next to the EXE (not inside PyInstaller’s temp extract dir)
+- **Requires Windows 10 or 11** with Windrose on Steam; WebView2 Runtime required (see [User Guide](docs/ui.md) if the window is blank)
+
+---
+
+## Upgrading from v1.2
+
+1. Close any running copy of the tool.
+2. Replace `windrose-save-tool.exe` with this release (or download from GitHub Releases).
+3. Your existing backups beside the old EXE are not moved automatically — copy `r5_save_tool\_backups` if you kept the EXE in a different folder.
+
+No save-format changes; no need to re-run captain selection unless you want to switch captains in Config.
+
+---
+
+## For developers
+
+- Build: `uv sync --extra build` then `pyinstaller build_exe.spec --noconfirm`
+- Optional onedir layout: [docs/windows-packaging.md](docs/windows-packaging.md)
+- Tag `v1.3.0` to trigger the GitHub Actions release workflow
+
+---
+
 # Windrose Save Tool — v1.2 Release Notes
 
 **Multi-captain support.** Saves with more than one captain now work correctly across every screen. The tool auto-selects the right captain from your account's default, or you can switch captains explicitly from the Config screen or the `--captain` flag.

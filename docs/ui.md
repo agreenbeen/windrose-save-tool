@@ -30,14 +30,16 @@ cd C:\Users\<you>\r5-save-tool
 This is the preferred launch path for repository users. For packaged distribution users, launch:
 
 ```powershell
-dist\r5-save-tool\r5-save-tool.exe
+dist\windrose-save-tool.exe
 ```
+
+(or the full `dist\windrose-save-tool\` folder after an onedir build — see [windows-packaging.md](windows-packaging.md)).
 
 **What happens:**
 
 - The API server starts on `http://127.0.0.1:8765`
-- A native desktop window opens automatically using `pywebview` with the **Qt backend** (`PySide6` + `qtpy`).
-- If the Qt backend is unavailable, the launcher falls back gracefully: it starts the API server and opens `http://127.0.0.1:8765/ui/` in your default browser. The experience is identical.
+- A native desktop window opens via `pywebview` using the **platform default on Windows** (WebView2 / Edge Chromium — no bundled Qt).
+- If the native backend is unavailable, the launcher falls back gracefully: it starts the API server and opens `http://127.0.0.1:8765/ui/` in your default browser. The experience is identical.
 
 Press **Ctrl+C** in the terminal to stop the server (browser mode). Closing the native window stops the server automatically (native window mode).
 
@@ -87,40 +89,40 @@ $env:R5_SAVE_UI_PORT = "8766"
 
 ```powershell
 # Stop any running built app to avoid file locks in dist/
-Get-Process | Where-Object { $_.Path -like "*dist\\r5-save-tool*" } | Stop-Process -Force
+Get-Process | Where-Object { $_.Path -like "*dist\\windrose-save-tool*" } | Stop-Process -Force
 
-# Remove previous output bundle
-Remove-Item -Recurse -Force .\dist\r5-save-tool -ErrorAction SilentlyContinue
+# Remove previous output (onefile default)
+Remove-Item -Force .\dist\windrose-save-tool.exe -ErrorAction SilentlyContinue
 
 # Rebuild clean
 .venv\Scripts\python.exe -m PyInstaller build_exe.spec --noconfirm
 ```
 
-The output is a self-contained folder at:
+The default onefile output is:
 
 ```
-dist\r5-save-tool\r5-save-tool.exe
+dist\windrose-save-tool.exe
 ```
 
-Distribute the entire `dist\r5-save-tool\` folder. The EXE opens the native desktop window on launch (no terminal required).
+For an unpacked folder build (often better cold start), use `build_exe_onedir.spec` (see [windows-packaging.md](windows-packaging.md)). Distribute the produced EXE plus any bundled folder PyInstaller emits next to it.
 
 ### Troubleshooting the EXE Build
 
 | Problem | Fix |
 |---|---|
 | `ModuleNotFoundError: rocksdict` | rocksdict's compiled extension was not collected. Re-run PyInstaller from the correct venv and confirm `rocksdict` imports cleanly first. |
-| `webview` import error at runtime | Add `webview.platforms.edgechromium` to `hiddenimports` in `build_exe.spec`. |
+| `webview` import error at runtime | Add `webview.platforms.edgechromium` / `webview.platforms.winforms` to `hiddenimports` in `build_exe.spec`. |
 | Window is blank on launch | WebView2 Runtime may not be installed. Download from https://developer.microsoft.com/en-us/microsoft-edge/webview2/ |
-| `qtpy` missing | Install it with `.venv\Scripts\python.exe -m pip install qtpy`. |
-| `PySide6` missing | Install it with `.venv\Scripts\python.exe -m pip install PySide6`. |
 
 ### Note on native backend choice
 
-This project now prefers `pywebview`'s **Qt backend** rather than the default WinForms backend. That avoids the `pythonnet` requirement on Python 3.14 and gives a stable native window on Windows.
+Packaged builds rely on pywebview's **Windows default** (WebView2) to keep installer size small. `pythonnet` may still resolve as a transitive dependency of pywebview but is **not required** when WebView2 is available.
 
-If the Qt backend is unavailable, the launcher falls back to browser mode automatically so the UI is still usable.
+Optional **Qt backend** (`PySide6` + `qtpy`) is intentionally **not** a project dependency anymore; browser fallback remains if the native window cannot start.
 
-You do not need `pythonnet` for the normal Windows desktop path anymore.
+### Measuring artifact size
+
+Use `scripts/measure_exe_size.py` and capture JSON under `tmp/exe-size/` — see [windows-packaging.md](windows-packaging.md).
 
 ---
 

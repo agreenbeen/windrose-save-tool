@@ -9,11 +9,24 @@ A desktop app for safely editing your Windrose save game. Add items to your ship
 
 ## Getting Started
 
-1. **Launch the app** — double-click `r5-save-tool.exe`
+1. **Launch the app** — double-click `windrose-save-tool.exe`
 2. **Check the Config screen** — the app should find your save automatically. If anything shows a warning, see [First-Time Setup](docs/ui.md#first-time-setup) in the user guide.
 3. **Make your changes** — use the sidebar to navigate to Inventory, Coins, or Backups
 
 The app opens a small dark-themed window. If no window appears, look for it in your taskbar.
+
+### Networking (one port for UI + API)
+
+The desktop app runs a single local web server. The **same** `http://127.0.0.1:PORT` is used for both the on-screen UI (`/ui/…`) and the backing API (`/api/…`) — not two different ports.
+
+If something else is already using the default port (**8765**), you can pick a fixed port or let the app choose one:
+
+| Environment variable | Meaning |
+|---------------------|---------|
+| `R5_SAVE_UI_PORT` | Port number (default `8765`), or `0` / `auto` to use a free port at launch |
+| `R5_SAVE_UI_HOST` | Host to open in the browser (default `127.0.0.1`) |
+
+Set these in Windows *Environment Variables* for your user, or only for one session in PowerShell, for example: `set R5_SAVE_UI_PORT=auto` before starting the EXE.
 
 ## What You Can Do
 
@@ -57,8 +70,10 @@ Build the distributable EXE:
 ```powershell
 uv sync --extra build
 .venv\Scripts\pyinstaller.exe build_exe.spec --noconfirm
-# Output: dist\r5-save-tool.exe
+# Output: dist\windrose-save-tool.exe (onefile) or dist\windrose-save-tool\ (onedir build)
 ```
+
+See [Windows packaging & size measurement](docs/windows-packaging.md) for onedir builds and comparing artifact sizes.
 
 Additional developer docs:
 

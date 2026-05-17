@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
@@ -12,7 +13,30 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .ui_service import service
+if TYPE_CHECKING:
+    from .ui_service import UIService
+
+
+class _LazyUIService:
+    """Delegates to UIService singleton on first attribute access.
+
+    Speeds dev/test import of ui_api (Pydantic models load without pulling
+    ui_service yet). PyInstaller still traces import ui_service inside
+    __getattr__, so frozen EXE size is largely unchanged; do not rely on this
+    for bundle trimming.
+
+    Do not use isinstance(service, UIService): this object is a proxy.
+    """
+
+    __slots__ = ()
+
+    def __getattr__(self, name: str) -> object:
+        from . import ui_service as _us
+
+        return getattr(_us.service, name)
+
+
+service = cast("UIService", _LazyUIService())
 
 
 class ConfigUpdate(BaseModel):
@@ -269,9 +293,24 @@ def restore_backup_route(
         _raise_api_error(exc)
 
 
+def _resolve_ui_listen_port() -> int:
+    """Match ``ui_window`` semantics: ``R5_SAVE_UI_PORT`` may be ``0`` or ``auto``."""
+    raw = os.environ.get("R5_SAVE_UI_PORT", "8765").strip().lower()
+    if raw in ("0", "auto"):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = int(s.getsockname()[1])
+        os.environ["R5_SAVE_UI_PORT"] = str(port)
+        return port
+    try:
+        return int(os.environ.get("R5_SAVE_UI_PORT", "8765"))
+    except ValueError:
+        return 8765
+
+
 def main() -> None:
     host = os.environ.get("R5_SAVE_UI_HOST", "127.0.0.1")
-    port = int(os.environ.get("R5_SAVE_UI_PORT", "8765"))
+    port = _resolve_ui_listen_port()
     uvicorn.run("r5_save_tool.ui_api:app", host=host, port=port, reload=False)
 
 
