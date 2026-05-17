@@ -41,9 +41,10 @@ See [Strategy decision](#strategy-decision) below for rationale and when to revi
 
 ---
 
-## Further PyInstaller tuning (optional trials)
+## Further PyInstaller tuning
 
-- **`strip=True`** in the `EXE(...)` / `COLLECT(...)` blocks may trim a few MB if a suitable `strip` tool is on `PATH`; verify the built app still launches and can open saves before keeping it.
+- **`strip=True`** is set in both spec files. On Windows this is a no-op (no `strip` binary on `PATH`) so the warnings in the build log are harmless and expected. It takes effect on Linux/macOS if the tool is ever built there.
+- **Excluded modules:** unused pywebview backends (`mshtml`, `cef`, `gtk`, `cocoa`, `qt`), `pygments`, `setuptools`/`pkg_resources`, `pytest`, `coverage` — removes ~1.4 MiB. **`bottle` must stay bundled** — pywebview's `http` module imports it at the top level for the `BottleServer` default.
 - Prefer measured A/B over guessing: run `scripts/measure_exe_size.py` after each change.
 
 ## Onedir build (faster cold start, no single huge exe)
@@ -84,6 +85,23 @@ Write results under `tmp/exe-size/nuitka-spike.json` (etc.) using `scripts/measu
 **Not default:** shipping a separate native WebView2 host (Rust/.NET) plus Python worker — reserved for a future epic if PyInstaller cannot meet goals.
 
 ---
+
+## Releasing
+
+Tag a commit with a `v*` tag and push it — GitHub Actions (`.github/workflows/release.yml`) will build the EXE on `windows-latest`, measure the artifact, and create a GitHub Release with the EXE attached and the matching section from `RELEASE_NOTES.md` as the release body.
+
+```powershell
+git tag v1.2
+git push origin v1.2
+```
+
+Pre-release versions (tags containing a hyphen, e.g. `v1.3-beta.1`) are automatically marked as pre-releases.
+
+## Assets
+
+- `assets/windrose-save-tool-icon.png` — master app icon (1024×1024).
+- `assets/icon.ico` — multi-size icon for PyInstaller and the UI. Regenerate with `python scripts/create_icon.py` (requires `uv sync --extra build`).
+- `assets/windows_version_info.txt` — Windows VERSIONINFO (right-click → Properties). Update `filevers`/`prodvers`/`FileVersion`/`ProductVersion` when bumping the release version.
 
 ## Related
 

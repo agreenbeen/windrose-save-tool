@@ -15,6 +15,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -61,6 +62,16 @@ _WEBVIEW2_LOOPBACK_ARGS = (
     "--disable-features=BlockInsecurePrivateNetworkRequests,"
     "PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults"
 )
+_EXTRA_PNA_DISABLE_FEATURES = (
+    "BlockInsecurePrivateNetworkRequests,"
+    "PrivateNetworkAccessSendPreflights,"
+    "PrivateNetworkAccessRespectPreflightResults"
+)
+
+# The AppContainer that hosts the WebView2 renderer process.  Windows network
+# isolation blocks loopback connections from inside AppContainers by default,
+# so the renderer cannot reach 127.0.0.1 unless it is explicitly exempted.
+_WEBVIEW2_APPCONTAINER = "microsoft.win32webviewhost_cw5n1h2txyewy"
 
 
 def _ensure_webview2_can_reach_loopback() -> None:
@@ -78,6 +89,162 @@ def _ensure_webview2_can_reach_loopback() -> None:
     if need_localhost:
         parts.append("--allow-insecure-localhost")
     os.environ[key] = " ".join(parts).strip()
+
+
+def _append_loopback_flags_to_browser_args(current: str) -> str:
+    """Merge loopback/PNA disables into pywebview's ``AdditionalBrowserArguments`` string.
+
+    pywebview sets ``CreationProperties.AdditionalBrowserArguments`` itself (see
+    ``edgechromium.py``), which overrides the ``WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS``
+    env var for that control.  Flags must be appended on the same string.
+    """
+    out = (current or "").strip()
+    if "allow-insecure-localhost" not in out.lower():
+        out = f"{out} --allow-insecure-localhost".strip()
+    if "blockinsecureprivatenetworkrequests" in out.lower():
+        return out
+    m = re.search(r"--disable-features=([^\s]+)", out)
+    if m:
+        feats = m.group(1)
+        merged = f"{feats},{_EXTRA_PNA_DISABLE_FEATURES}"
+        out = re.sub(
+            r"--disable-features=[^\s]+",
+            f"--disable-features={merged}",
+            out,
+            count=1,
+        )
+    else:
+        out = f"{out} {_WEBVIEW2_LOOPBACK_ARGS}".strip()
+    return out
+
+
+def _install_pywebview_loopback_browser_args_patch() -> None:
+    """Append loopback/PNA flags to pywebview's WebView2 ``CreationProperties`` (Windows)."""
+    if sys.platform != "win32":
+        return
+    try:
+        from webview.platforms import edgechromium as _ec
+    except Exception:
+        return
+    if getattr(_ec.EdgeChrome, "_r5_loopback_args_patch", False):
+        return
+
+    _orig_init = _ec.EdgeChrome.__init__
+
+    def _init_with_loopback(self, form, window, cache_dir):
+        _orig_init(self, form, window, cache_dir)
+        props = self.webview.CreationProperties
+        if props is not None:
+            props.AdditionalBrowserArguments = _append_loopback_flags_to_browser_args(
+                props.AdditionalBrowserArguments or ""
+            )
+
+    _ec.EdgeChrome.__init__ = _init_with_loopback  # type: ignore[method-assign]
+    _ec.EdgeChrome._r5_loopback_args_patch = True
+
+
+def _webview2_container_is_loopback_exempt() -> bool:
+    """Return True if the WebView2 AppContainer is already in the loopback exemption list."""
+    try:
+        creation = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        result = subprocess.run(
+            ["CheckNetIsolation", "LoopbackExempt", "-s"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            creationflags=creation,
+        )
+        return _WEBVIEW2_APPCONTAINER.lower() in result.stdout.lower()
+    except Exception:
+        return False
+
+
+def _ensure_webview2_container_loopback_exempt() -> None:
+    """Exempt the WebView2 renderer AppContainer from Windows loopback network isolation.
+
+    The WebView2 renderer runs inside the AppContainer
+    ``microsoft.win32webviewhost_cw5n1h2txyewy``.  Windows network isolation
+    blocks that container from opening loopback TCP connections, so the renderer
+    gets ERR_CONNECTION_REFUSED even when the Python health check succeeds from
+    the (non-sandboxed) main process.
+
+    Tries without elevation first; on access-denied prompts UAC via
+    ``ShellExecuteExW("runas", ...)`` and waits up to 15 s for the user to act.
+    """
+    if sys.platform != "win32":
+        return
+    if _webview2_container_is_loopback_exempt():
+        return
+
+    creation = subprocess.CREATE_NO_WINDOW
+    cmd_args = ["LoopbackExempt", "-a", f"-n={_WEBVIEW2_APPCONTAINER}"]
+
+    # Try without elevation first (succeeds when already running as admin).
+    try:
+        result = subprocess.run(
+            ["CheckNetIsolation"] + cmd_args,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=creation,
+        )
+        if result.returncode == 0:
+            return
+    except FileNotFoundError:
+        return  # CheckNetIsolation not present — nothing to do
+    except Exception:
+        pass
+
+    # Need elevation: request UAC via ShellExecuteExW with the "runas" verb.
+    try:
+        import ctypes
+        import ctypes.wintypes
+
+        SEE_MASK_NOCLOSEPROCESS = 0x00000040
+        SW_HIDE = 0
+
+        class SHELLEXECUTEINFOW(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.wintypes.DWORD),
+                ("fMask", ctypes.wintypes.DWORD),
+                ("hwnd", ctypes.wintypes.HWND),
+                ("lpVerb", ctypes.c_wchar_p),
+                ("lpFile", ctypes.c_wchar_p),
+                ("lpParameters", ctypes.c_wchar_p),
+                ("lpDirectory", ctypes.c_wchar_p),
+                ("nShow", ctypes.c_int),
+                ("hInstApp", ctypes.wintypes.HINSTANCE),
+                ("lpIDList", ctypes.c_void_p),
+                ("lpClass", ctypes.c_wchar_p),
+                ("hkeyClass", ctypes.wintypes.HKEY),
+                ("dwHotKey", ctypes.wintypes.DWORD),
+                ("hIconOrMonitor", ctypes.wintypes.HANDLE),
+                ("hProcess", ctypes.wintypes.HANDLE),
+            ]
+
+        sei = SHELLEXECUTEINFOW()
+        sei.cbSize = ctypes.sizeof(SHELLEXECUTEINFOW)
+        sei.fMask = SEE_MASK_NOCLOSEPROCESS
+        sei.hwnd = None
+        sei.lpVerb = "runas"
+        sei.lpFile = "CheckNetIsolation"
+        sei.lpParameters = f'LoopbackExempt -a -n="{_WEBVIEW2_APPCONTAINER}"'
+        sei.lpDirectory = None
+        sei.nShow = SW_HIDE
+        sei.hInstApp = None
+        sei.hProcess = None
+
+        shell32 = ctypes.windll.shell32
+        shell32.ShellExecuteExW.restype = ctypes.wintypes.BOOL
+        shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(SHELLEXECUTEINFOW)]
+        ok = shell32.ShellExecuteExW(ctypes.byref(sei))
+
+        if ok and sei.hProcess:
+            kernel32 = ctypes.windll.kernel32
+            kernel32.WaitForSingleObject(sei.hProcess, 15_000)
+            kernel32.CloseHandle(sei.hProcess)
+    except Exception as exc:
+        print(f"Note: Could not apply WebView2 loopback exemption: {exc}", flush=True)
 
 
 def _ensure_loopback_not_proxied() -> None:
@@ -132,6 +299,14 @@ def _run_api(server: uvicorn.Server) -> None:
 
 def _is_frozen_bundle() -> bool:
     return bool(getattr(sys, "frozen", False))
+
+
+def _resolve_icon_path() -> str:
+    if _is_frozen_bundle():
+        p = Path(sys._MEIPASS) / "assets" / "icon.ico"
+    else:
+        p = Path(__file__).parent.parent / "assets" / "icon.ico"
+    return str(p) if p.is_file() else ""
 
 
 def _ensure_stdio_for_frozen_gui() -> None:
@@ -407,6 +582,7 @@ def launch() -> None:
     _maybe_assign_ephemeral_ui_port()
     if sys.platform == "win32":
         _ensure_webview2_can_reach_loopback()
+        _ensure_webview2_container_loopback_exempt()
     _ensure_loopback_not_proxied()
     print(f"Starting Windrose Save Tool API on port {API_PORT}...", flush=True)
     print(f"   UI (browser): {API_URL}", flush=True)
@@ -426,29 +602,17 @@ def launch() -> None:
             )
             sys.exit(1)
 
-        # Frozen EXE: run API in a child process so WebView2/pythonnet on the main
-        # thread cannot starve or break asyncio in a background thread (fixes
-        # ERR_CONNECTION_REFUSED to 127.0.0.1 despite /api/health succeeding).
-        if _is_frozen_bundle():
-            try:
-                api_child = _spawn_internal_api_subprocess()
-            except OSError:
-                api_child = None
-            if api_child is not None:
-                started_local_api = True
-                ready = _wait_for_api()
-            else:
-                api_server = _make_server()
-                t = threading.Thread(target=_run_api, args=(api_server,), daemon=True)
-                t.start()
-                started_local_api = True
-                ready = _wait_for_api()
+        # On frozen Windows builds run uvicorn in a child process so its
+        # asyncio event loop is completely isolated from pywebview's WinForms
+        # message pump (which takes over the main thread in _wv.start()).
+        if _is_frozen_bundle() and sys.platform == "win32":
+            api_child = _spawn_internal_api_subprocess()
         else:
             api_server = _make_server()
             t = threading.Thread(target=_run_api, args=(api_server,), daemon=True)
             t.start()
-            started_local_api = True
-            ready = _wait_for_api()
+        started_local_api = True
+        ready = _wait_for_api()
 
     if not ready:
         print(
@@ -472,6 +636,8 @@ def launch() -> None:
     try:
         import webview as _wv
 
+        _install_pywebview_loopback_browser_args_patch()
+
         # Frozen EXE: open about:blank first, then load the UI URL after the window is
         # shown. Some WebView2 builds refuse the first navigation to loopback even when
         # the server is up; load_url() after shown avoids that race/policy edge case.
@@ -480,6 +646,8 @@ def launch() -> None:
 
             if wv_nav.windows:
                 wv_nav.windows[0].load_url(API_URL)
+
+        ui_debug = os.environ.get("R5_SAVE_UI_DEBUG", "").strip() in ("1", "true", "yes")
 
         if _is_frozen_bundle():
             _wv.create_window(
@@ -490,7 +658,7 @@ def launch() -> None:
                 resizable=True,
                 min_size=(900, 600),
             )
-            _wv.start(debug=False, func=_navigate_after_shown)
+            _wv.start(debug=ui_debug, func=_navigate_after_shown)
         else:
             _wv.create_window(
                 WINDOW_TITLE,
@@ -500,7 +668,7 @@ def launch() -> None:
                 resizable=True,
                 min_size=(900, 600),
             )
-            _wv.start(debug=False)
+            _wv.start(debug=ui_debug)
         # Native window closed.
         if started_local_api:
             _stop_api_backend(api_server, t, api_child)

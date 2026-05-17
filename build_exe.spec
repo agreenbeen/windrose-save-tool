@@ -45,6 +45,8 @@ def _load_dotnet_bridge_runtime_datas() -> list[tuple[str, str]]:
 datas = [
     # UI static frontend files
     (str(Path('r5_save_tool/ui_static').resolve()), 'r5_save_tool/ui_static'),
+    # Window icon — resolved at runtime by ui_window._resolve_icon_path()
+    (str(Path(SPECPATH) / 'assets' / 'icon.ico'), 'assets'),
 ]
 datas += _load_dotnet_bridge_runtime_datas()
 
@@ -125,6 +127,26 @@ a = Analysis(
         'watchfiles',
         # Pydantic mypy plugin only
         'pydantic.mypy',
+        # Qt/PySide6 — not needed; pywebview uses the edgechromium (WebView2) backend on Windows
+        'PySide6',
+        'shiboken6',
+        'qtpy',
+        'PyQt5',
+        'PyQt6',
+        # pywebview backends not used on Windows
+        'webview.platforms.mshtml',
+        'webview.platforms.cef',
+        'webview.platforms.gtk',
+        'webview.platforms.cocoa',
+        'webview.platforms.qt',
+        # Syntax highlighting — not used by this app
+        'pygments',
+        # Build/packaging tooling — not needed at runtime
+        'setuptools',
+        'pkg_resources',
+        # Test tooling — never shipped
+        'pytest',
+        'coverage',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -144,11 +166,12 @@ exe = EXE(
     name='windrose-save-tool',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,   # Hide the console window
-    icon=None,       # Add a .ico path here if you have an icon
+    console=False,
+    icon=str(Path(SPECPATH) / 'assets' / 'icon.ico'),
+    version_file='assets/windows_version_info.txt',
     onefile=True,
 )

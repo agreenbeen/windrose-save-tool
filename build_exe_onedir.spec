@@ -25,6 +25,7 @@ def _load_dotnet_bridge_runtime_datas() -> list[tuple[str, str]]:
 
 datas = [
     (str(Path('r5_save_tool/ui_static').resolve()), 'r5_save_tool/ui_static'),
+    (str(Path(SPECPATH) / 'assets' / 'icon.ico'), 'assets'),
 ]
 datas += _load_dotnet_bridge_runtime_datas()
 
@@ -94,6 +95,26 @@ a = Analysis(
         'uvloop',
         'watchfiles',
         'pydantic.mypy',
+        # Qt/PySide6 — not needed; pywebview uses the edgechromium (WebView2) backend on Windows
+        'PySide6',
+        'shiboken6',
+        'qtpy',
+        'PyQt5',
+        'PyQt6',
+        # pywebview backends not used on Windows
+        'webview.platforms.mshtml',
+        'webview.platforms.cef',
+        'webview.platforms.gtk',
+        'webview.platforms.cocoa',
+        'webview.platforms.qt',
+        # Syntax highlighting — not used by this app
+        'pygments',
+        # Build/packaging tooling — not needed at runtime
+        'setuptools',
+        'pkg_resources',
+        # Test tooling — never shipped
+        'pytest',
+        'coverage',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -111,11 +132,12 @@ exe = EXE(
     name='windrose-save-tool',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
+    strip=True,
     upx=True,
     runtime_tmpdir=None,
     console=False,
-    icon=None,
+    icon=str(Path(SPECPATH) / 'assets' / 'icon.ico'),
+    version_file='assets/windows_version_info.txt',
 )
 
 coll = COLLECT(
@@ -123,7 +145,7 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    strip=False,
+    strip=True,
     upx=True,
     name='windrose-save-tool',
 )

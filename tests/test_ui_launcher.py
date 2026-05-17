@@ -173,6 +173,18 @@ def test_health_payload_detection() -> None:
     assert not _health_payload_is_windrose_api({"ok": False, "status": {"manifest_found": True}})
 
 
+def test_append_loopback_flags_merges_into_pywebview_disable_features() -> None:
+    from r5_save_tool.ui_window import _append_loopback_flags_to_browser_args
+
+    base = "--disable-features=ElasticOverscroll"
+    merged = _append_loopback_flags_to_browser_args(base)
+    assert "ElasticOverscroll" in merged
+    assert "BlockInsecurePrivateNetworkRequests" in merged
+    assert "allow-insecure-localhost" in merged.lower()
+    again = _append_loopback_flags_to_browser_args(merged)
+    assert again == merged
+
+
 def test_webview2_loopback_env_is_idempotent(monkeypatch) -> None:
     """WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS must allow http://127.0.0.1 from WebView2."""
     monkeypatch.delenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", raising=False)
